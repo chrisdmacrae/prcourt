@@ -1,81 +1,87 @@
 # prcourt
 
-Review a GitHub pull request with three coding agents, driven by a skill for Claude Code or Codex and watched from a Go TUI. Agents run side by side in [Rex](https://www.superlogical.com/rex) when it is available; otherwise use your agent host or separate terminals.
-
-- **Reviewer** reads the PR description, linked issues, comments, and diff with `gh`, lists the requirements, and suggests changes.
-- **Tester** learns how the repository tests, runs the relevant suites, adds unit, integration, contract, and e2e tests the way the repository writes them, and records every e2e run (video, screenshots, logs) for people to check.
-- **Judge** rules on every reviewer finding (upheld, downgraded, pedantic, hallucinated, wrong), looks at the screenshots and the frames extracted from the videos, checks each requirement, and decides: approve, request changes, or needs a human.
-
-```
-┌──────────────┬───────────────┬──────────────┐
-│ prcourt TUI  │ Reviewer      │ Judge        │
-│ status,      │ (claude/codex)│ starts when  │
-│ findings,    ├───────────────┤ both submit  │
-│ tests,       │ Tester        │              │
-│ verdict      │ (claude/codex)│              │
-└──────────────┴───────────────┴──────────────┘
-```
+Review GitHub pull requests with three coding agents: a reviewer, a tester, and a judge. Use the skill in Claude Code or Codex and follow progress in a terminal UI.
 
 ## Install
 
-Install [GitHub CLI](https://cli.github.com), then run from this checkout on macOS or Linux:
+Install the skill for both Claude Code and Codex with the [skills CLI](https://skills.sh), without manually cloning or keeping a checkout:
 
 ```sh
-./scripts/install.sh      # download the latest release and link the skill; no Go required
-export PATH="$HOME/.local/bin:$PATH"
-prcourt doctor            # checks required tools and optional Rex, terminal-browser, and Node
+npx skills add https://github.com/chrisdmacrae/prcourt/tree/main/skill/prcourt --global --agent claude-code --agent codex
 ```
 
-On Windows, run `skill/prcourt/scripts/install.ps1` in PowerShell 7 and put `$HOME/.local/bin` first in PATH. Install the `skill/prcourt` directory in your agent's skills folder. The POSIX installer links it into `~/.claude/skills` and `~/.agents/skills` automatically.
+This command requires Node/npm. Omit either `--agent` option to install for just one agent, or omit `--global` for a project-local installation.
 
-Re-running the installer checks for updates and downloads only when the installed version differs from the latest stable release. The skill does this before every review. Downloads are verified against the release's SHA-256 checksums. Use `prcourt --version` to see the installed tag (`dev` for source builds). The installers need a published stable release; they do not fall back to installing Go.
+**No Go installation is needed.** Before each review, the skill checks for the latest stable [CLI release](https://github.com/chrisdmacrae/prcourt/releases/latest) and installs or updates the binary under `~/.local/bin`, verifying its SHA-256 checksum. macOS, Windows, and Linux are supported on x64 and arm64. Windows installation uses PowerShell 7.
 
-The release workflow produces binaries for macOS, Windows, and Linux, each for x64 (`amd64`) and arm64. The assets are named `prcourt_darwin_amd64`, `prcourt_darwin_arm64`, `prcourt_windows_amd64.exe`, `prcourt_windows_arm64.exe`, `prcourt_linux_amd64`, and `prcourt_linux_arm64`.
+Court also needs [GitHub CLI](https://cli.github.com) signed in, Git, ffmpeg/ffprobe, and the selected agent CLIs. The skill runs `prcourt doctor` to check these dependencies. Rex and terminal-browser are optional.
+
+Update the skill's instructions and bundled scripts separately:
+
+```sh
+npx skills update prcourt --global
+```
 
 ## Use
 
-From a coding agent with the skill: "review PR 123 with prcourt". Or by hand, in the repository's clone:
+In Claude Code or Codex, ask:
+
+> Review PR 123 with prcourt.
+
+The skill prepares an isolated checkout, starts the agents, and reports the verdict. If [Rex](https://www.superlogical.com/rex) and its server are available, the agents and progress UI open in panes. Otherwise, the skill uses the host's agent tools or supplies commands for separate terminals.
+
+From the CLI, run in the repository being reviewed:
 
 ```sh
-prcourt run 123                        # claude for every role
-prcourt run 123 -judge codex           # a different model judges
-prcourt run 123 -agent codex:gpt-5.5   # NAME:MODEL
-prcourt run 123 -yolo                  # no permission prompts in the agents
-prcourt run 123 -terminal-browser      # use terminal-browser for interactive browser checks, if installed
-prcourt wait  ~/.prcourt/runs/OWNER__REPO/pr-123-…   # until the verdict
-prcourt report RUN                     # the verdict as Markdown
-prcourt post RUN                       # post it as a comment review (never approves on GitHub)
-prcourt clean RUN                      # remove the checkout, keep the evidence
+prcourt doctor
+prcourt run 123                       # Claude for every role
+prcourt run 123 -judge codex          # choose a different judge
+prcourt run 123 -agent codex:gpt-5.5  # select an agent and model
+prcourt tui RUN                      # watch progress in any terminal
+prcourt wait RUN                     # wait for the verdict
+prcourt report RUN                   # print the Markdown report
+prcourt post RUN                     # post a comment review to GitHub
+prcourt clean RUN                    # remove the checkout, keep the evidence
 ```
 
-At startup, court checks for Rex and terminal-browser. If Rex is missing or its server is unreachable, the run is prepared without panes and prints commands to start the reviewer and tester yourself. `-no-rex` forces this mode. `-json` prints run metadata in either mode. The skill can run the roles through its host's agent tools instead; start the judge after both submit. `prcourt tui RUN` works in a regular terminal without Rex.
+`RUN` is the directory printed by `prcourt run`, under `~/.prcourt/runs/` by default. Add `~/.local/bin` to PATH to use the downloaded CLI directly. `prcourt --version` prints the installed release tag.
 
-When used from a terminal-based agent TUI, the skill selects `-terminal-browser` if the executable is installed. The tester then uses it for interactive browser checks beside the terminal. Repository-owned e2e suites keep their existing framework and recording setup. Missing terminal-browser does not block a run.
+Useful run flags:
 
-Without `-yolo`, agents stop at their permission prompts. In Rex, the TUI shows "needs you"; press `r`, `t`, or `g` to jump to that pane. The first run in a new directory also asks each agent CLI to trust the folder.
+- `-repo owner/name`: review a repository without a local clone.
+- `-no-rex`: prepare the run and print agent commands without opening panes.
+- `-json`: print run metadata for automation, with or without Rex.
+- `-terminal-browser`: use terminal-browser for interactive browser checks if installed. The skill selects this in terminal-based hosts; repository-owned e2e suites keep their existing framework.
+- `-yolo`: bypass agent permission prompts and sandboxes. Without it, answer prompts in the agent's terminal; the Rex UI marks blocked panes as "needs you".
 
-TUI keys: `1`–`5` or `tab` switch tabs, `j`/`k` move, `enter` details, `o` opens a test's video or screenshot or a finding's file in `$EDITOR`, `a` opens the artifacts folder, `J` starts the judge now, `q` quits.
+TUI keys: `1`–`5` or `tab` switch tabs; `j`/`k` move; `enter` shows details; `o` opens evidence or a finding in `$EDITOR`; `a` opens artifacts; `r`/`t`/`g` focus Rex agent panes; `J` requests the judge; `q` quits.
 
 ## How it works
 
-`prcourt run` checks out the PR head in a worktree of your clone (or a fresh clone with `-repo`), saves `pr.json`, `pr.diff`, and the inline review comments, and renders each role's instructions from `prompts/` into the run directory under `~/.prcourt/runs/`. Each agent writes a draft and hands it in with `prcourt submit ROLE`, which rejects anything malformed and lists every problem at once, so the agent can fix them and resubmit. On top of the JSON shape, submit enforces:
+The PR head is checked out in a separate worktree or clone, leaving your working directory untouched. The run directory holds the PR metadata, diff, review comments, agent prompts, and evidence.
 
-- Reviewer: every code finding names a file, a line at the PR head, and the exact quoted code. prcourt checks them against the checkout and rejects findings whose file, line, or quote does not exist, the commonest hallucination. It also tags findings on lines the PR does not change, a common source of pedantry, for the judge.
-- Tester: every test has a command and a log; every e2e test that ran has a video or a screenshot; artifacts live inside the run directory. Frames are sampled from each video with ffmpeg for the judge, and the added tests are saved as `tests.patch`. The tester then asks in its pane whether to commit and push those tests to the PR branch, and does so only when you say yes.
-- Judge: every finding gets a ruling with a reason, every requirement a status with evidence, every test an assessment; a downgrade must lower the severity; and `approve` is refused while a blocker or major problem stands or a requirement is not met.
+1. **Reviewer** reads the PR, linked issues, comments, and code, then lists requirements and findings. Court checks cited files, lines, and quotes against the checkout and flags findings outside the diff.
+2. **Tester** follows the repository's testing conventions, runs relevant suites, adds missing tests, and records e2e evidence. Every test needs a command and log; every executed e2e test needs a video or screenshot. Added tests are saved as `tests.patch` and are committed or pushed only with your approval.
+3. **Judge** checks each finding, requirement, test, and visual artifact. It dismisses unsupported or pedantic findings and decides `approve`, `request_changes`, or `needs_human`. Court rejects approval while a blocker or major issue stands or a requirement remains unmet or unverified.
 
-When the reviewer and tester have both submitted, the second `submit` starts the judge in a Rex pane, or prints its command when running without Rex. `prcourt judge RUN` also prints that command without Rex. The judge's submit writes `verdict.md`.
+Each agent submits validated JSON with `prcourt submit ROLE`. Once both reviewer and tester submit, court starts the judge in Rex or prints its command; without Rex, the skill can start it through the host's agent tools. `prcourt judge RUN` also provides the judge command. The final report is `verdict.md`; recordings and sampled video frames remain in the run directory.
+
+Court does not automatically post reviews or approve PRs on GitHub. `prcourt post` publishes a comment review only when you ask it to.
 
 ## Develop
 
-Building from source requires the Go version in `go.mod`:
+Clone the repository and use the Go version in `go.mod`:
 
 ```sh
 go test ./...
 go install .
-go run . run 123 -agent 'echo {prompt}; exec sleep 3600'   # stub agents, to test the layout without spending tokens
+go run . run 123 -agent 'echo {prompt}; exec sleep 3600'  # test the Rex layout with stub agents
 ```
+
+Alternatively, `./scripts/install.sh` downloads the release CLI and links this checkout's skill into Claude Code and Codex without building from source.
 
 ## Releases
 
-Pushing a version tag such as `v1.0.0` triggers `.github/workflows/release.yml`. It runs tests and vet, cross-compiles all six binaries without CGO, embeds the tag as the CLI version, and publishes a GitHub Release with the binaries and `checksums.txt`. Tags containing a hyphen (such as `v1.0.0-rc.1`) publish prereleases, which the installers skip. Ordinary branch pushes do not publish releases. Publish a stable tag before asking users to install from releases.
+Pushing a version tag such as `v0.1.0` triggers [the release workflow](.github/workflows/release.yml): tests and vet, six CGO-free builds, and a GitHub Release containing the binaries and `checksums.txt`. Binaries embed the tag as their version. Assets use `prcourt_<darwin|windows|linux>_<amd64|arm64>`, with `.exe` on Windows.
+
+Tags containing a hyphen, such as `v0.2.0-rc.1`, publish prereleases that the installers skip. Ordinary branch pushes do not publish releases.
