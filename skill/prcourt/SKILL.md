@@ -9,14 +9,33 @@ description: Review a GitHub pull request with a reviewer, a tester, and a judge
 
 ## Check dependencies first
 
-Before every run, check that prcourt and the tools it drives are installed, even if they were installed last time:
+Before every run, check for CLI updates using the installer bundled with this skill. It queries the latest stable GitHub Release, compares its tag with `prcourt --version`, and downloads the matching binary only when missing or different. Downloads are SHA-256 checked before replacing the CLI. Go is not required. Install GitHub CLI (`gh`, https://cli.github.com) first if missing.
+
+On macOS or Linux, prepend the user bin directory to PATH and run `scripts/install.sh` relative to this skill's directory:
 
 ```sh
-command -v prcourt || go install github.com/chrisdmacrae/prcourt@latest
+export PATH="$HOME/.local/bin:$PATH"
+sh /path/to/this/skill/scripts/install.sh
 prcourt doctor -agent claude
 ```
 
-Pass `doctor` the same `-agent`, `-reviewer`, `-tester`, `-judge`, and `-no-rex` flags you will pass to `run`. It prints `FAIL` for missing required tools (git, gh and its sign-in, ffmpeg and ffprobe, and the chosen agent CLIs), and `warn` for optional Rex, terminal-browser, node, and npx. Resolve required failures and run `doctor` again. Steps such as `gh auth login` or signing in to claude or codex need the user. Do not install Rex or ask the user to open it just to run court: missing Rex or an unreachable server selects the no-Rex path automatically. `prcourt run` repeats these checks at startup. If `go` itself is missing, install it the same way (`brew install go` on macOS).
+On Windows, use PowerShell 7 and the bundled `scripts/install.ps1`:
+
+```powershell
+$env:PATH = "$HOME/.local/bin;" + $env:PATH
+& /path/to/this/skill/scripts/install.ps1
+prcourt doctor -agent claude
+```
+
+Resolve the script path from the loaded skill's location, not the repository being reviewed. Both scripts install under `~/.local/bin` and support x64 and arm64; Windows uses `prcourt.exe`. Keep that directory first in PATH for the agent commands that follow. If checking or downloading fails, report the error and use the existing CLI if it still works; if none is installed, resolve the failure before starting. A repository with no published stable release cannot supply a binary yet. Do not install Go as a fallback.
+
+To check the installed version yourself:
+
+```sh
+prcourt --version
+```
+
+Pass `doctor` the same `-agent`, `-reviewer`, `-tester`, `-judge`, and `-no-rex` flags you will pass to `run`. It prints `FAIL` for missing required tools (git, gh and its sign-in, ffmpeg and ffprobe, and the chosen agent CLIs), and `warn` for optional Rex, terminal-browser, node, and npx. Resolve required failures and run `doctor` again. Steps such as `gh auth login` or signing in to claude or codex need the user. Do not install Rex or ask the user to open it just to run court: missing Rex or an unreachable server selects the no-Rex path automatically. `prcourt run` repeats these checks at startup.
 
 When this skill is used from a terminal-based agent TUI, check the `terminal-browser` result at startup. If installed, pass `-terminal-browser` to `run` so the tester uses it for interactive browser checks and load its skill when you need to drive a browser yourself. In a non-terminal host, omit that flag. A missing terminal-browser is not a blocker; keep the existing browser and recording tools. Repository-owned e2e suites still run with their own framework.
 

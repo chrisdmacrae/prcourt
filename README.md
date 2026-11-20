@@ -18,10 +18,19 @@ Review a GitHub pull request with three coding agents, driven by a skill for Cla
 
 ## Install
 
+Install [GitHub CLI](https://cli.github.com), then run from this checkout on macOS or Linux:
+
 ```sh
-./scripts/install.sh      # go install, and link the skill into ~/.claude/skills and ~/.agents/skills
+./scripts/install.sh      # download the latest release and link the skill; no Go required
+export PATH="$HOME/.local/bin:$PATH"
 prcourt doctor            # checks required tools and optional Rex, terminal-browser, and Node
 ```
+
+On Windows, run `skill/prcourt/scripts/install.ps1` in PowerShell 7 and put `$HOME/.local/bin` first in PATH. Install the `skill/prcourt` directory in your agent's skills folder. The POSIX installer links it into `~/.claude/skills` and `~/.agents/skills` automatically.
+
+Re-running the installer checks for updates and downloads only when the installed version differs from the latest stable release. The skill does this before every review. Downloads are verified against the release's SHA-256 checksums. Use `prcourt --version` to see the installed tag (`dev` for source builds). The installers need a published stable release; they do not fall back to installing Go.
+
+The release workflow produces binaries for macOS, Windows, and Linux, each for x64 (`amd64`) and arm64. The assets are named `prcourt_darwin_amd64`, `prcourt_darwin_arm64`, `prcourt_windows_amd64.exe`, `prcourt_windows_arm64.exe`, `prcourt_linux_amd64`, and `prcourt_linux_arm64`.
 
 ## Use
 
@@ -59,7 +68,14 @@ When the reviewer and tester have both submitted, the second `submit` starts the
 
 ## Develop
 
+Building from source requires the Go version in `go.mod`:
+
 ```sh
 go test ./...
+go install .
 go run . run 123 -agent 'echo {prompt}; exec sleep 3600'   # stub agents, to test the layout without spending tokens
 ```
+
+## Releases
+
+Pushing a version tag such as `v1.0.0` triggers `.github/workflows/release.yml`. It runs tests and vet, cross-compiles all six binaries without CGO, embeds the tag as the CLI version, and publishes a GitHub Release with the binaries and `checksums.txt`. Tags containing a hyphen (such as `v1.0.0-rc.1`) publish prereleases, which the installers skip. Ordinary branch pushes do not publish releases. Publish a stable tag before asking users to install from releases.

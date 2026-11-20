@@ -1,13 +1,105 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReleaseInstaller(t *testing.T) {
+	cases := []struct {
+		name, os, arch, asset, installed, failure string
+	}{
+		{"macOS x64 install", "Darwin", "x86_64", "prcourt_darwin_amd64", "", ""},
+		{"macOS arm64 update", "Darwin", "arm64", "prcourt_darwin_arm64", "v1.0.0", ""},
+		{"Linux x64 install", "Linux", "x86_64", "prcourt_linux_amd64", "", ""},
+		{"Linux arm64 install", "Linux", "aarch64", "prcourt_linux_arm64", "", ""},
+		{"up to date", "Darwin", "arm64", "prcourt_darwin_arm64", "v1.2.3", ""},
+		{"bad checksum preserves CLI", "Darwin", "arm64", "prcourt_darwin_arm64", "v1.0.0", "checksum"},
+		{"wrong version preserves CLI", "Darwin", "arm64", "prcourt_darwin_arm64", "v1.0.0", "version"},
+		{"network failure preserves CLI", "Darwin", "arm64", "prcourt_darwin_arm64", "v1.0.0", "network"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home := t.TempDir()
+			bin := filepath.Join(home, ".local", "bin")
+			if err := os.MkdirAll(bin, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			write := func(path, data string) {
+				t.Helper()
+				if err := os.WriteFile(path, []byte(data), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(filepath.Join(bin, "uname"), fmt.Sprintf("#!/bin/sh\ncase \"$1\" in -s) echo %s ;; -m) echo %s ;; esac\n", c.os, c.arch))
+			fixture := t.TempDir()
+			version := "v1.2.3"
+			if c.failure == "version" {
+				version = "v9.9.9"
+			}
+			binary := fmt.Sprintf("#!/bin/sh\necho %s\n", version)
+			write(filepath.Join(fixture, c.asset), binary)
+			digest := fmt.Sprintf("%x", sha256.Sum256([]byte(binary)))
+			if c.failure == "checksum" {
+				digest = strings.Repeat("0", 64)
+			}
+			write(filepath.Join(fixture, "checksums.txt"), digest+"  "+c.asset+"\n")
+			write(filepath.Join(bin, "gh"), `#!/bin/sh
+echo "$*" >> "$HOME/requests"
+if [ "$1" = api ]; then
+  [ "$FAILURE" != network ] || exit 1
+  echo v1.2.3
+else
+  while [ "$1" != --dir ]; do shift; done
+  /bin/cp "$FIXTURE"/* "$2/"
+fi
+`)
+			target := filepath.Join(bin, "prcourt")
+			old := "#!/bin/sh\necho " + c.installed + "\n"
+			if c.installed != "" {
+				write(target, old)
+			}
+			t.Setenv("HOME", home)
+			t.Setenv("PATH", bin+":/usr/bin:/bin")
+			t.Setenv("FIXTURE", fixture)
+			t.Setenv("FAILURE", c.failure)
+			out, err := exec.Command("sh", "skill/prcourt/scripts/install.sh").CombinedOutput()
+			if (err != nil) != (c.failure != "") {
+				t.Fatalf("installer error = %v: %s", err, out)
+			}
+			got, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := binary
+			if c.failure != "" || c.installed == "v1.2.3" {
+				want = old
+			}
+			if string(got) != want {
+				t.Fatalf("installed bytes = %q, want %q", got, want)
+			}
+			requests, _ := os.ReadFile(filepath.Join(home, "requests"))
+			if c.installed == "v1.2.3" {
+				if strings.Contains(string(requests), "download") {
+					t.Fatal("up-to-date CLI was downloaded again")
+				}
+			} else if c.failure != "network" && !strings.Contains(string(requests), "--pattern "+c.asset+" ") {
+				t.Fatalf("wrong platform asset requested: %s", requests)
+			}
+			leftovers, _ := filepath.Glob(filepath.Join(bin, ".prcourt-*"))
+			if len(leftovers) != 0 {
+				t.Fatalf("installer left temporary files: %v", leftovers)
+			}
+		})
+	}
+}
 
 func TestRunSelectsAvailableTerminalTools(t *testing.T) {
 	cases := []struct {

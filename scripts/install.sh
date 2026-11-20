@@ -1,14 +1,12 @@
 #!/bin/sh
-# Builds prcourt into $GOBIN (or ~/go/bin) and links the skill into the skill
+# Downloads prcourt from GitHub Releases and links the skill into the skill
 # folders of Claude Code (~/.claude/skills) and Codex and other agents
 # that read ~/.agents/skills.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 
-(cd "$root" && go install .)
-bin="$(go env GOBIN)"
-[ -n "$bin" ] || bin="$(go env GOPATH)/bin"
-echo "Installed $bin/prcourt"
+sh "$root/skill/prcourt/scripts/install.sh"
+bin="$HOME/.local/bin"
 case ":$PATH:" in *":$bin:"*) ;; *) echo "Add $bin to PATH so agents can run prcourt." ;; esac
 
 for dir in "$HOME/.claude/skills" "$HOME/.agents/skills"; do

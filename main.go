@@ -18,6 +18,7 @@ import (
 const usage = `prcourt: review a pull request with a reviewer, a tester, and a judge.
 
 Commands:
+  version       print the CLI version
   doctor        check required tools and optional Rex and terminal-browser
   run PR        check out PR; open Rex panes if available, otherwise print commands
   tui [RUN]     show a run's progress, findings, tests, and verdict
@@ -33,10 +34,17 @@ Commands:
 RUN is a run directory and defaults to $PRCOURT_RUN.
 `
 
+// Release builds set version to their Git tag with -ldflags.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
+	}
+	if os.Args[1] == "version" || os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
 	}
 	cmds := map[string]func([]string) error{
 		"doctor": cmdDoctor, "run": cmdRun, "tui": cmdTUI, "status": cmdStatus, "wait": cmdWait, "submit": cmdSubmit,
