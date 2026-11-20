@@ -48,6 +48,6 @@ When one agent cannot finish, the user can start the judge anyway with `prcourt 
 
 ## Report the verdict
 
-Read `RUN_DIR/verdict.md` (or `prcourt report RUN_DIR`) and tell the user the decision, the requirements that are unmet or unverified, the findings the judge upheld, how many it dismissed, and where the recordings are (`RUN_DIR/artifacts`, frames in `RUN_DIR/frames`). The tests the tester added are in `RUN_DIR/tests.patch`.
+Read `RUN_DIR/verdict.md` (or `prcourt report RUN_DIR`) and tell the user the decision, the requirements that are unmet or unverified, the findings the judge upheld, how many it dismissed, and where the recordings are (`RUN_DIR/artifacts`, frames in `RUN_DIR/frames`). The tests the tester added are in `RUN_DIR/tests.patch` and are not on the PR yet. When that file is not empty, the tester's pane ends by asking the user whether to commit and push them to the PR branch: point the user to that question, and let the user answer it there.
 
 `prcourt post RUN_DIR` posts the report to the PR as a comment review. It is visible to everyone on the PR, so run it only after the user asks you to post. Remove the checkout with `prcourt clean RUN_DIR` when the user is done; the reports and artifacts stay.

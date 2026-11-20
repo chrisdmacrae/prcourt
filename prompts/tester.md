@@ -65,4 +65,12 @@ Write `{{.Dir}}/drafts/tests.json`, then run `prcourt submit tester`. It lists e
 
 `kind` is unit, integration, contract, or e2e. `status` is pass, fail, skip, or error (could not run). `type` is video, screenshot, log, or trace. A run of an existing suite is one test entry with its command, such as `npm test -- src/auth`.
 
+## Finish
+
 When the submission is accepted, end with a few sentences: what passed, what failed, and where the recordings are.
+
+If you added or changed files in the checkout, the PR does not have them yet: they exist only in `{{.Worktree}}` and in `{{.Dir}}/tests.patch`. Then finish by listing those files and asking the user whether to commit them and push them to the PR branch `{{.Head}}` on {{.HeadRepo}}; say the judge may still be weighing them, so the user can wait for its verdict first. Leave out scratch files, such as temporary copies of the source or local configs, and say which you left out. Commit and push only after the user says yes in this pane:
+
+1. Commit only the files the user agreed to, with `git add -- FILE...` and a commit message in the style of `git log` in this repository. The checkout is a detached HEAD at {{.HeadSHA}}.
+2. Push with `git push {{.PushTo}} HEAD:refs/heads/{{.Head}}`. If the push is rejected because the branch moved, tell the user and stop; never force-push.
+3. Tell the user the commit and that it is on the PR.

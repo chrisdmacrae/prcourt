@@ -34,6 +34,8 @@ type Run struct {
 	Base     string            `json:"base"`
 	Head     string            `json:"head"`
 	HeadSHA  string            `json:"head_sha"`
+	HeadRepo string            `json:"head_repo"` // owner/name of the repository the PR branch lives in
+	PushTo   string            `json:"push_to"`   // git remote or URL that pushes to the PR branch
 	Worktree string            `json:"worktree"`
 	RepoDir  string            `json:"repo_dir,omitempty"` // the local clone the worktree belongs to, if any
 	Agents   map[string]string `json:"agents"`             // role -> agent spec, such as claude or codex:gpt-5.5
@@ -121,19 +123,22 @@ func cmdRun(args []string) error {
 		*repo = local
 	}
 
-	fields := "number,title,body,url,author,baseRefName,headRefName,headRefOid,files,labels,comments,reviews,latestReviews,closingIssuesReferences,statusCheckRollup,isDraft"
+	fields := "number,title,body,url,author,baseRefName,headRefName,headRefOid,files,labels,comments,reviews,latestReviews,closingIssuesReferences,statusCheckRollup,isDraft,headRepository"
 	prJSON, err := runIn(ctx, repoAbs, "gh", "pr", "view", fs.Arg(0), "--repo", *repo, "--json", fields)
 	if err != nil {
 		return err
 	}
 	var pr struct {
-		Number  int    `json:"number"`
-		Title   string `json:"title"`
-		URL     string `json:"url"`
-		Base    string `json:"baseRefName"`
-		Head    string `json:"headRefName"`
-		HeadSHA string `json:"headRefOid"`
-		Author  struct {
+		Number   int    `json:"number"`
+		Title    string `json:"title"`
+		URL      string `json:"url"`
+		Base     string `json:"baseRefName"`
+		Head     string `json:"headRefName"`
+		HeadSHA  string `json:"headRefOid"`
+		HeadRepo struct {
+			NameWithOwner string `json:"nameWithOwner"`
+		} `json:"headRepository"`
+		Author struct {
 			Login string `json:"login"`
 		} `json:"author"`
 	}
@@ -145,7 +150,7 @@ func cmdRun(args []string) error {
 	bin, _ = filepath.EvalSymlinks(bin)
 	r := &Run{
 		Repo: *repo, Number: pr.Number, URL: pr.URL, Title: pr.Title, Author: pr.Author.Login,
-		Base: pr.Base, Head: pr.Head, HeadSHA: pr.HeadSHA,
+		Base: pr.Base, Head: pr.Head, HeadSHA: pr.HeadSHA, HeadRepo: cmpOr(pr.HeadRepo.NameWithOwner, *repo),
 		Agents: map[string]string{}, Yolo: *yolo, Bin: bin, Created: time.Now(),
 	}
 	for _, role := range roles {
@@ -236,8 +241,18 @@ func checkout(ctx context.Context, r *Run, repoDir string, sameRepo bool) error 
 	} else if _, err := runIn(ctx, r.Dir, "gh", "repo", "clone", r.Repo, r.Worktree, "--", "--filter=blob:none"); err != nil {
 		return err
 	}
-	_, err := runIn(ctx, r.Worktree, "gh", "pr", "checkout", strconv.Itoa(r.Number), "--repo", r.Repo, "--detach")
-	return err
+	if _, err := runIn(ctx, r.Worktree, "gh", "pr", "checkout", strconv.Itoa(r.Number), "--repo", r.Repo, "--detach"); err != nil {
+		return err
+	}
+	// Push the way the clone already talks to GitHub, so SSH users keep SSH.
+	r.PushTo = "origin"
+	if r.HeadRepo != r.Repo {
+		r.PushTo = "https://github.com/" + r.HeadRepo + ".git"
+		if url, err := runIn(ctx, r.Worktree, "git", "remote", "get-url", "origin"); err == nil && !strings.HasPrefix(string(url), "https://") {
+			r.PushTo = "git@github.com:" + r.HeadRepo + ".git"
+		}
+	}
+	return nil
 }
 
 func writePrompts(r *Run) error {
