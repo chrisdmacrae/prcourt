@@ -1,11 +1,119 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestRunSelectsAvailableTerminalTools(t *testing.T) {
+	cases := []struct {
+		name, rex                               string
+		browser, requestBrowser, noRex, wantRex bool
+	}{
+		{name: "missing Rex falls back", requestBrowser: true},
+		{name: "unreachable Rex falls back", rex: "down", browser: true, requestBrowser: true},
+		{name: "available Rex opens panes", rex: "up", browser: true, requestBrowser: true, wantRex: true},
+		{name: "explicit no Rex skips server", rex: "up", noRex: true},
+		{name: "non terminal host leaves browser unused", browser: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			bin := t.TempDir()
+			stub := func(name, script string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, name := range []string{"ffmpeg", "ffprobe", "claude"} {
+				stub(name, "exit 0")
+			}
+			stub("gh", `case "$1 $2" in
+"repo view") echo '{"nameWithOwner":"owner/repo"}' ;;
+"pr view") echo '{"number":123,"title":"Tool selection","headRefOid":"abcdef123","headRefName":"feature","baseRefName":"main"}' ;;
+"api "*) echo '[]' ;;
+esac`)
+			stub("git", `case "$1 $2" in
+"worktree add") /bin/mkdir -p "$4" ;;
+"rev-parse --show-toplevel") pwd ;;
+esac`)
+			calls := filepath.Join(t.TempDir(), "rex-calls")
+			t.Setenv("REX_CALLS", calls)
+			t.Setenv("REX_SESSION", "")
+			if c.rex != "" {
+				body := `echo "$1" >> "$REX_CALLS"
+case "$1" in
+whoami) exit 0 ;;
+new) echo '{"session_id":"session","initial_windows":[{"window_id":"window","block_ids":["tui"]}]}' ;;
+split) echo '{"block_ids":["agent"]}' ;;
+*) exit 1 ;;
+esac`
+				if c.rex == "down" {
+					body = "echo whoami >> \"$REX_CALLS\"; exit 1"
+				}
+				stub("rex", body)
+			}
+			if c.browser {
+				stub("terminal-browser", "exit 0")
+			}
+			t.Setenv("PATH", bin)
+			args := []string{"-json", "-repo-dir", t.TempDir(), "-out", t.TempDir()}
+			if c.requestBrowser {
+				args = append(args, "-terminal-browser")
+			}
+			if c.noRex {
+				args = append(args, "-no-rex")
+			}
+			args = append(args, "123")
+			stdout := os.Stdout
+			rd, wr, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.Stdout = wr
+			err = cmdRun(args)
+			os.Stdout = stdout
+			wr.Close()
+			out, readErr := io.ReadAll(rd)
+			rd.Close()
+			if err != nil || readErr != nil {
+				t.Fatalf("run: %v; read: %v; output: %s", err, readErr, out)
+			}
+			var r Run
+			if err := json.Unmarshal(out, &r); err != nil {
+				t.Fatalf("run must print only JSON: %v: %s", err, out)
+			}
+			if (r.Rex.Session != "") != c.wantRex {
+				t.Fatalf("Rex session = %q, want Rex = %v", r.Rex.Session, c.wantRex)
+			}
+			wantBrowser := c.requestBrowser && c.browser
+			if r.TerminalBrowser != wantBrowser {
+				t.Fatalf("terminal_browser = %v, want %v", r.TerminalBrowser, wantBrowser)
+			}
+			prompt, err := os.ReadFile(r.path("prompts", "tester.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(prompt), "terminal-browser open URL --split right") != wantBrowser {
+				t.Fatal("tester instructions do not match selected browser")
+			}
+			invocations, _ := os.ReadFile(calls)
+			if c.noRex && len(invocations) > 0 {
+				t.Fatalf("-no-rex invoked Rex: %s", invocations)
+			}
+			if !c.wantRex && strings.Contains(string(invocations), "new") {
+				t.Fatalf("unavailable Rex launched panes: %s", invocations)
+			}
+			if c.wantRex && (r.Rex.Blocks["reviewer"] == "" || r.Rex.Blocks["tester"] == "") {
+				t.Fatal("available Rex did not launch both agents")
+			}
+		})
+	}
+}
 
 const sampleDiff = `diff --git a/src/limiter.go b/src/limiter.go
 index 1111111..2222222 100644

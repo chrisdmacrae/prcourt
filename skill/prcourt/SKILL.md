@@ -1,11 +1,11 @@
 ---
 name: prcourt
-description: Review a GitHub pull request with three agents in Rex panes (a reviewer that suggests changes, a tester that runs and writes unit, integration, contract, and recorded e2e tests, and a judge that weighs both and decides) using the prcourt CLI and its TUI. Use when the user asks to review, test, or judge a pull request with prcourt, with agents, or in Rex.
+description: Review a GitHub pull request with a reviewer, a tester, and a judge using the prcourt CLI and its TUI, with Rex panes when available. Use when the user asks to review, test, or judge a pull request with prcourt, with agents, or in Rex.
 ---
 
 # prcourt
 
-`prcourt run PR` checks out the pull request in a fresh worktree and opens a Rex tab: the prcourt TUI on the left, the reviewer and tester agents on the right. Each agent reads its instructions from the run directory and hands in its result with `prcourt submit`, which validates it. The judge starts by itself once the reviewer and tester have both submitted, and its verdict is written to `verdict.md` in the run directory. You start the run, keep the user informed, and report the verdict; the three agents do the reviewing.
+`prcourt run PR` checks out the pull request in a fresh worktree. When Rex is available, it opens a Rex tab: the prcourt TUI on the left, the reviewer and tester agents on the right. Otherwise, use your host's agent tools or separate terminals to run the roles. Each agent reads its instructions from the run directory and hands in its result with `prcourt submit`, which validates it. In Rex, the judge starts by itself once both agents submit; without Rex, you start it after both submit. Its verdict is written to `verdict.md`. You start the run, keep the user informed, and report the verdict; the three agents do the reviewing.
 
 ## Check dependencies first
 
@@ -16,7 +16,9 @@ command -v prcourt || go install github.com/chrisdmacrae/prcourt@latest
 prcourt doctor -agent claude
 ```
 
-Pass `doctor` the same `-agent`, `-reviewer`, `-tester`, `-judge`, and `-no-rex` flags you will pass to `run`, so it checks the agents that run will start. It prints `FAIL` with a `fix:` command for each missing required tool (git, gh and its sign-in, rex and its server, ffmpeg and ffprobe, and the chosen agent CLIs), and `warn` for node and npx, which the tester needs for Playwright e2e tests. Install each failing tool with its fix command, telling the user what you are installing, then run `doctor` again until it reports no `FAIL`. Steps that need the user, such as `gh auth login`, signing in to claude or codex, or opening the Rex app, are theirs to do: ask them, and wait. `prcourt run` runs the same checks and stops with the same list if anything is still missing. If `go` itself is missing, install it the same way (`brew install go` on macOS).
+Pass `doctor` the same `-agent`, `-reviewer`, `-tester`, `-judge`, and `-no-rex` flags you will pass to `run`. It prints `FAIL` for missing required tools (git, gh and its sign-in, ffmpeg and ffprobe, and the chosen agent CLIs), and `warn` for optional Rex, terminal-browser, node, and npx. Resolve required failures and run `doctor` again. Steps such as `gh auth login` or signing in to claude or codex need the user. Do not install Rex or ask the user to open it just to run court: missing Rex or an unreachable server selects the no-Rex path automatically. `prcourt run` repeats these checks at startup. If `go` itself is missing, install it the same way (`brew install go` on macOS).
+
+When this skill is used from a terminal-based agent TUI, check the `terminal-browser` result at startup. If installed, pass `-terminal-browser` to `run` so the tester uses it for interactive browser checks and load its skill when you need to drive a browser yourself. In a non-terminal host, omit that flag. A missing terminal-browser is not a blocker; keep the existing browser and recording tools. Repository-owned e2e suites still run with their own framework.
 
 ## Start a run
 
@@ -34,7 +36,7 @@ PR is a number, URL, or branch. Useful flags:
 
 Inside Rex, the run opens as a new tab in the current session; elsewhere, as a new session named `pr-N-review`. `-json` prints run.json: save its `dir`.
 
-If `rex` is missing or not running, `prcourt run -no-rex 123` prepares the run and prints each agent's command for the user to start.
+If `rex` is missing or not running, the run is still prepared. `-no-rex` forces this mode even when Rex is available. `-json` prints the same run metadata in either mode; an empty `rex.session` means no panes were launched. Start the reviewer and tester with your host's agent tools, each in `worktree`, reading `prompts/reviewer.md` or `prompts/tester.md` under `dir` and setting `PRCOURT_RUN=dir`. If the host has no agent tools, run without `-json` to get commands for separate terminals. After both submit, start the judge from `prompts/judge.md` the same way, or use `prcourt judge RUN_DIR` to print its command. Do not wait for a verdict before starting these agents. The user can watch progress with `prcourt tui RUN_DIR` in any terminal.
 
 ## Follow the run
 

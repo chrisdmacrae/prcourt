@@ -25,24 +25,25 @@ var roles = []string{"reviewer", "tester", "judge"}
 // Run is a run directory's run.json: everything later commands and the TUI
 // need to find the PR, its checkout, and the Rex panes.
 type Run struct {
-	Dir      string            `json:"dir"`
-	Repo     string            `json:"repo"` // owner/name
-	Number   int               `json:"number"`
-	URL      string            `json:"url"`
-	Title    string            `json:"title"`
-	Author   string            `json:"author"`
-	Base     string            `json:"base"`
-	Head     string            `json:"head"`
-	HeadSHA  string            `json:"head_sha"`
-	HeadRepo string            `json:"head_repo"` // owner/name of the repository the PR branch lives in
-	PushTo   string            `json:"push_to"`   // git remote or URL that pushes to the PR branch
-	Worktree string            `json:"worktree"`
-	RepoDir  string            `json:"repo_dir,omitempty"` // the local clone the worktree belongs to, if any
-	Agents   map[string]string `json:"agents"`             // role -> agent spec, such as claude or codex:gpt-5.5
-	Yolo     bool              `json:"yolo"`
-	Bin      string            `json:"bin"`
-	Created  time.Time         `json:"created"`
-	Rex      RexLayout         `json:"rex"`
+	Dir             string            `json:"dir"`
+	Repo            string            `json:"repo"` // owner/name
+	Number          int               `json:"number"`
+	URL             string            `json:"url"`
+	Title           string            `json:"title"`
+	Author          string            `json:"author"`
+	Base            string            `json:"base"`
+	Head            string            `json:"head"`
+	HeadSHA         string            `json:"head_sha"`
+	HeadRepo        string            `json:"head_repo"` // owner/name of the repository the PR branch lives in
+	PushTo          string            `json:"push_to"`   // git remote or URL that pushes to the PR branch
+	Worktree        string            `json:"worktree"`
+	RepoDir         string            `json:"repo_dir,omitempty"` // the local clone the worktree belongs to, if any
+	Agents          map[string]string `json:"agents"`             // role -> agent spec, such as claude or codex:gpt-5.5
+	Yolo            bool              `json:"yolo"`
+	Bin             string            `json:"bin"`
+	Created         time.Time         `json:"created"`
+	Rex             RexLayout         `json:"rex"`
+	TerminalBrowser bool              `json:"terminal_browser,omitempty"` // use terminal-browser for interactive browser checks
 }
 
 type RexLayout struct {
@@ -87,6 +88,7 @@ func cmdRun(args []string) error {
 	yolo := fs.Bool("yolo", false, "let the agents run every command without asking (bypasses their permission prompts and sandbox)")
 	out := fs.String("out", "", "directory for runs (default ~/.prcourt/runs)")
 	noRex := fs.Bool("no-rex", false, "prepare the run and print the agent commands instead of opening Rex panes")
+	terminalBrowser := fs.Bool("terminal-browser", false, "use terminal-browser for interactive browser checks from a terminal-based agent, if installed")
 	newSession := fs.Bool("new-session", false, "open a new Rex session even inside one")
 	asJSON := fs.Bool("json", false, "print run.json")
 	fs.Usage = func() {
@@ -104,8 +106,18 @@ func cmdRun(args []string) error {
 	for _, role := range roles {
 		specs = append(specs, cmpOr(*per[role], *agent))
 	}
-	if err := missing(doctor(ctx, need{rex: !*noRex, agents: specs})); err != nil {
+	checks := doctor(ctx, need{rex: !*noRex, agents: specs})
+	if err := missing(checks); err != nil {
 		return err
+	}
+	useRex, useBrowser := false, false
+	for _, c := range checks {
+		if c.Name == "rex server" {
+			useRex = c.OK
+		}
+		if c.Name == "terminal-browser" {
+			useBrowser = *terminalBrowser && c.OK
+		}
 	}
 
 	repoAbs, _ := filepath.Abs(*repoDir)
@@ -152,6 +164,7 @@ func cmdRun(args []string) error {
 		Repo: *repo, Number: pr.Number, URL: pr.URL, Title: pr.Title, Author: pr.Author.Login,
 		Base: pr.Base, Head: pr.Head, HeadSHA: pr.HeadSHA, HeadRepo: cmpOr(pr.HeadRepo.NameWithOwner, *repo),
 		Agents: map[string]string{}, Yolo: *yolo, Bin: bin, Created: time.Now(),
+		TerminalBrowser: useBrowser,
 	}
 	for _, role := range roles {
 		r.Agents[role] = cmpOr(*per[role], *agent)
@@ -206,13 +219,20 @@ func cmdRun(args []string) error {
 	}
 	logEvent(r, "run created for %s#%d at %s", r.Repo, r.Number, short(r.HeadSHA))
 
-	if *noRex {
+	if !useRex {
+		if *asJSON {
+			b, _ := json.MarshalIndent(r, "", "  ")
+			fmt.Println(string(b))
+			return nil
+		}
 		fmt.Printf("Run: %s\n\n", r.Dir)
 		for _, role := range roles[:2] {
 			argv, _ := agentArgv(r, role)
 			fmt.Printf("%s (in %s):\n  %s\n\n", role, r.Worktree, shellJoin(argv))
 		}
-		fmt.Println("The judge starts after both submit; with -no-rex start it with: prcourt judge " + r.Dir)
+		fmt.Println("Rex is disabled or unavailable. Run these commands in separate terminals, or have your agent run each role from its prompt file.")
+		fmt.Println("Watch progress with: prcourt tui " + shellQuote(r.Dir))
+		fmt.Println("After both submit, get the judge command with: prcourt judge " + shellQuote(r.Dir))
 		return nil
 	}
 	if err := openLayout(ctx, r, *newSession); err != nil {
@@ -438,7 +458,7 @@ func reorder(args []string) []string {
 
 func isBoolFlag(a string) bool {
 	switch strings.TrimLeft(a, "-") {
-	case "yolo", "no-rex", "new-session", "json", "force", "h", "help":
+	case "yolo", "no-rex", "terminal-browser", "new-session", "json", "force", "h", "help":
 		return true
 	}
 	return false

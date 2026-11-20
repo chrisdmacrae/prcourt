@@ -18,8 +18,8 @@ import (
 const usage = `prcourt: review a pull request with a reviewer, a tester, and a judge.
 
 Commands:
-  doctor        check that git, gh, rex, ffmpeg, and the agents are installed
-  run PR        check out PR, then open the TUI and the agents in Rex
+  doctor        check required tools and optional Rex and terminal-browser
+  run PR        check out PR; open Rex panes if available, otherwise print commands
   tui [RUN]     show a run's progress, findings, tests, and verdict
   status [RUN]  print where a run stands (-json for machines)
   wait [RUN]    wait until the judge decides (-timeout 10m)

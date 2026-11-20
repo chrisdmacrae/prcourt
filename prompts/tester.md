@@ -29,6 +29,9 @@ Skip a level only when it does not apply, and say why in `conventions`.
 Every e2e test that runs gets a video and screenshots of the states that matter, including the final state. Pick the first that works:
 
 - The repository's own e2e framework, with recording turned on for this run, such as Playwright with `video: 'on'`, `screenshot: 'on'`, and `trace: 'on'` in a config override, or `cypress run --config video=true,screenshotOnRunFailure=true`. Copy the outputs into `artifacts/`.
+{{if .TerminalBrowser}}
+- For interactive browser checks, use terminal-browser beside this terminal-based agent. Load the terminal-browser skill if available; otherwise read `terminal-browser open --help` and `terminal-browser action --help`. Open the app with `terminal-browser open URL --split right`, drive it with `terminal-browser action -- ...`, and save screenshots under `{{.Dir}}/artifacts/`. Finish browser actions with `terminal-browser action done`. If it cannot open in this terminal or save the required evidence, use the next recording-capable option below and report the limitation.
+{{end}}
 - Your built-in browser, if you have one, when it can save recordings or screenshots to files.
 - Playwright with Chromium (`npx playwright install chromium`), a script under `artifacts/` that opens the app with a browser context created with `recordVideo: {dir: ...}` and saves a screenshot after each step.
 

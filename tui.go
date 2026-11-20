@@ -221,6 +221,16 @@ func (m model) openSelected() tea.Cmd {
 			return nil
 		}
 		editor := cmpOr(os.Getenv("EDITOR"), "vi")
+		if r.Rex.Session == "" {
+			cmd := exec.Command(editor, fmt.Sprintf("+%d", max(f.Line, 1)), f.File)
+			cmd.Dir = r.Worktree
+			return tea.ExecProcess(cmd, func(err error) tea.Msg {
+				if err != nil {
+					return noteMsg(err.Error())
+				}
+				return noteMsg("closed " + f.File)
+			})
+		}
 		return func() tea.Msg {
 			_, err := runIn(context.Background(), "", "rex", "split", "-s", r.Rex.Session, "-b", r.Rex.TUI, "--split", "below",
 				"-c", r.Worktree, "--label", f.File, "--", editor, fmt.Sprintf("+%d", max(f.Line, 1)), f.File)

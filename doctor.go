@@ -39,8 +39,8 @@ func doctor(ctx context.Context, n need) []Check {
 		cs = append(cs, c)
 		return c.OK
 	}
-	probe := func(name, fix string, args ...string) {
-		c := Check{Name: name, Required: true, Fix: fix}
+	probe := func(name string, required bool, fix string, args ...string) {
+		c := Check{Name: name, Required: required, Fix: fix}
 		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput()
@@ -55,19 +55,20 @@ func doctor(ctx context.Context, n need) []Check {
 
 	tool("git", true, "checks out the PR in a worktree", install("git"))
 	if tool("gh", true, "reads the PR, its diff, comments, and linked issues", install("gh")) {
-		probe("gh auth", "gh auth login", "gh", "auth", "status")
+		probe("gh auth", true, "gh auth login", "gh", "auth", "status")
 	}
 	if n.role == "" || n.role == "tester" || n.role == "judge" {
 		tool("ffmpeg", true, "extracts frames from e2e videos for the judge", install("ffmpeg"))
 		tool("ffprobe", true, "reads video lengths to sample frames evenly", install("ffmpeg"))
 	}
 	if n.role == "" || n.role == "tester" {
+		tool("terminal-browser", false, "shows interactive browser checks beside a terminal-based agent", "install terminal-browser if you want browser checks in a terminal pane; otherwise use the repository's browser tooling")
 		tool("node", false, "runs Playwright with Chromium for e2e tests when the repository has no e2e framework", install("node"))
 		tool("npx", false, "installs and runs Playwright (npx playwright install chromium)", install("node"))
 	}
 	if n.rex && n.role == "" {
-		if tool("rex", true, "opens the TUI and the agents' panes", "install Rex from https://www.superlogical.com/rex, or pass -no-rex") {
-			probe("rex server", "open the Rex app so its server runs, or pass -no-rex", "rex", "whoami", "--json")
+		if tool("rex", false, "opens the TUI and the agents' panes when available; otherwise prints agent commands", "Rex is optional; install it from https://www.superlogical.com/rex for agent panes") {
+			probe("rex server", false, "Rex is optional; open the Rex app for agent panes, otherwise run without it", "rex", "whoami", "--json")
 		}
 	}
 	seen := map[string]bool{}
